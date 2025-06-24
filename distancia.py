@@ -1,65 +1,73 @@
+import urllib.parse
 import requests
-import time
 
-# Reemplaza esto con tu propia API key de OpenRouteService
-API_KEY = "TU_API_KEY"
+# Clave API proporcionada
+API_KEY = "4mDiNy2sj3smSFacOf4ECKb7Wlf0Gjnu"
+MAIN_API = "https://www.mapquestapi.com/directions/v2/route?"
 
-def get_coords(ciudad):
-    url = "https://nominatim.openstreetmap.org/search"
-    params = {
-        "q": ciudad,
-        "format": "json",
-        "limit": 1
-    }
-    headers = {
-        "User-Agent": "DRY7122-Exam-Script"
-    }
-    r = requests.get(url, params=params, headers=headers)
-    data = r.json()
-    if data:
-        return float(data[0]['lon']), float(data[0]['lat'])
-    else:
-        return None
+# Modos de transporte disponibles
+MODOS_TRANSPORTE = {
+    "1": "fastest",      # En auto
+    "2": "pedestrian",   # A pie
+    "3": "bicycle",      # En bicicleta
+    "4": "multimodal"    # Transporte público (donde esté disponible)
+}
+
+def menu_transporte():
+    print("\nSeleccione el modo de transporte:")
+    print("1 - Auto")
+    print("2 - A pie")
+    print("3 - Bicicleta")
+    print("4 - Transporte público")
+    modo = input("Opción (1/2/3/4): ")
+    return MODOS_TRANSPORTE.get(modo, "fastest")
 
 while True:
-    origen_txt = input("Ciudad de Origen (o 's' para salir): ")
-    if origen_txt.lower() == "s":
+    origen = input("\nCiudad de origen (o 's' para salir): ")
+    if origen.lower() in ['s', 'quit', 'salir']:
         break
-    destino_txt = input("Ciudad de Destino: ")
-    medio = input("Medio de transporte (driving-car, foot-walking, cycling-regular): ")
 
-    origen = get_coords(origen_txt)
-    destino = get_coords(destino_txt)
+    destino = input("Ciudad de destino (o 's' para salir): ")
+    if destino.lower() in ['s', 'quit', 'salir']:
+        break
 
-    if not origen or not destino:
-        print("❌ No se pudo obtener coordenadas para alguna de las ciudades.")
-        continue
+    transporte = menu_transporte()
 
-    url = f"https://api.openrouteservice.org/v2/directions/{medio}/geojson"
-    headers = {
-        "Authorization": API_KEY,
-        "Content-Type": "application/json"
+    parametros = {
+        "key": API_KEY,
+        "from": origen,
+        "to": destino,
+        "routeType": transporte,
+        "locale": "es_ES"  # 🌐 Establece idioma en español
     }
 
-    body = {
-        "coordinates": [list(origen), list(destino)]
-    }
+    url = MAIN_API + urllib.parse.urlencode(parametros)
+    print(f"\n🛰 URL enviada: {url}\n")
 
-    response = requests.post(url, json=body, headers=headers)
+    response = requests.get(url)
     data = response.json()
 
-    try:
-        summary = data['features'][0]['properties']['summary']
-        distancia_km = summary['distance'] / 1000
-        duracion_min = summary['duration'] / 60
-        print(f"✅ Distancia: {distancia_km:.2f} km")
-        print(f"⏱️ Duración estimada: {duracion_min:.2f} minutos")
+    status = data["info"]["statuscode"]
 
-        print("\n🧭 Instrucciones:")
-        for step in data['features'][0]['properties']['segments'][0]['steps']:
-            print(f"- {step['instruction']} ({step['distance']:.0f} m)")
-    except Exception as e:
-        print("❌ No se pudo calcular la ruta. Verifica los datos.")
-        print("Detalle técnico:", e)
+    if status == 0:
+        ruta = data["route"]
+        print("==============================================")
+        print(f"📍 Ruta desde {origen} hasta {destino}")
+        print(f"🕒 Duración del viaje: {ruta['formattedTime']}")
+        print(f"📏 Distancia: {ruta['distance']} millas ({ruta['distance']*1.61:.2f} km)")
+        if 'fuelUsed' in ruta:
+            print(f"⛽ Combustible estimado: {ruta['fuelUsed']:.2f} galones ({ruta['fuelUsed']*3.78:.2f} litros)")
+        print("==============================================")
+        print("🧭 Instrucciones del viaje:")
+        for paso in ruta["legs"][0]["maneuvers"]:
+            narrativa = paso["narrative"]
+            distancia_km = paso["distance"] * 1.61
+            print(f" - {narrativa} ({distancia_km:.2f} km)")
+        print("==============================================\n")
 
-    time.sleep(1)
+    elif status == 402:
+        print("❌ Error: Entradas inválidas para una o ambas ciudades.\n")
+    elif status == 611:
+        print("❌ Error: Faltan datos de origen o destino.\n")
+    else:
+        print(f"⚠ Código de error {status}. Consulte: https://developer.mapquest.com/documentation/directions-api/status-codes\n")
